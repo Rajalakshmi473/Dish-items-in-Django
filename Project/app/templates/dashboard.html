@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dish Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        h1 {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .container {
+            width: 80%;
+            margin: 0 auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+        }
+        th {
+            background-color: #007BFF;
+            color: #fff;
+        }
+        img {
+            max-width: 100px;
+            height: auto;
+        }
+        .btn {
+            background-color: #007BFF;
+            color: #fff;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+        .status {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Dish Dashboard</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Dish Name</th>
+                    <th>Image</th>
+                    <th>Status</th>
+                    <th>Toggle Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dish in dishes %}
+                <tr data-dish-id="{{ dish.dishId }}">
+                    <td>{{ dish.dishName }}</td>
+                    <td><img src="{{ dish.imageUrl }}" alt="{{ dish.dishName }}"></td>
+                    <td class="status">{{ dish.isPublished|yesno:"Published,Unpublished" }}</td>
+                    <td>
+                        <form method="post" action="{% url 'toggle_published' dish.dishId %}">
+                            {% csrf_token %}
+                            <button type="submit" class="btn">{% if dish.isPublished %}Unpublish{% else %}Publish{% endif %}</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <script>
+        // Establish WebSocket connection
+        const socket = new WebSocket('wss://localhost:8080/ws/dishes/');
+
+        // Handle incoming WebSocket messages
+        socket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const dishId = data.dishId;
+            const isPublished = data.isPublished;
+
+            // Update the status on the page
+            const dishRow = document.querySelector(`tr[data-dish-id="${dishId}"]`);
+            if (dishRow) {
+                const statusCell = dishRow.querySelector('.status');
+                if (statusCell) {
+                    statusCell.textContent = isPublished ? 'Published' : 'Unpublished';
+                }
+            }
+        };
+
+        // Add event listeners to form submissions
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', function(event) {
+                event.preventDefault(); // Prevent default form submission
+
+                // Get the dishId from the form's action attribute
+                const dishId = this.action.split('/').slice(-2, -1)[0];
+                // Get the current status from the form's button text
+                const currentStatus = this.querySelector('button').textContent.includes('Publish');
+
+                togglePublished(dishId, currentStatus);
+            });
+        });
+
+        // Function to toggle dish status
+        function togglePublished(dishId, currentStatus) {
+            fetch(`/api/dishes/${dishId}/toggle_published/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}',
+                },
+                body: JSON.stringify({ isPublished: !currentStatus }),
+            }).then(response => response.json())
+              .then(data => {
+                  // Update the status on the page
+                  const dishRow = document.querySelector(`tr[data-dish-id="${data.dishId}"]`);
+                  if (dishRow) {
+                      const statusCell = dishRow.querySelector('.status');
+                      if (statusCell) {
+                          statusCell.textContent = data.isPublished ? 'Published' : 'Unpublished';
+                      }
+                      // Update the button text
+                      const button = dishRow.querySelector('button');
+                      if (button) {
+                          button.textContent = data.isPublished ? 'Unpublish' : 'Publish';
+                      }
+                  }
+              });
+        }
+    </script>
+</body>
+</html>
